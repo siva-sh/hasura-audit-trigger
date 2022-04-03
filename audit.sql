@@ -1,18 +1,21 @@
--- An audit history is important on most tables. Provide an audit trigger that logs to
--- a dedicated audit table for the major relations.
+-- This is based on 2ndQuadrant/audit-trigger.
 --
--- This file should be generic and not depend on application roles or structures,
--- as it's being listed here:
---
---    https://wiki.postgresql.org/wiki/Audit_trigger_91plus    
---
--- This trigger was originally based on
---   http://wiki.postgresql.org/wiki/Audit_trigger
--- but has been completely rewritten.
---
--- Should really be converted into a relocatable EXTENSION, with control and upgrade files.
+-- Few changes from the original
+-- 1. Requires postgres >= 10
+-- 2. Row data is stored in jsonb
 
-CREATE EXTENSION IF NOT EXISTS hstore;
+-- The following are comments preserved from the original file:
+
+--> -- An audit history is important on most tables. Provide an audit trigger that logs to
+--> -- a dedicated audit table for the major relations.
+--> --
+--> -- This file should be generic and not depend on application roles or structures,
+--> -- as it's being listed here:
+--> --
+--> -- This trigger was originally based on
+--> --   http://wiki.postgresql.org/wiki/Audit_trigger
+--> -- but has been completely rewritten.
+--> --
 
 CREATE SCHEMA audit;
 REVOKE ALL ON SCHEMA audit FROM public;
@@ -29,8 +32,7 @@ COMMENT ON SCHEMA audit IS 'Out-of-table audit/history logging tables and trigge
 -- inserts.
 --
 -- Every index you add has a big impact too, so avoid adding indexes to the
--- audit table unless you REALLY need them. The hstore GIST indexes are
--- particularly expensive.
+-- audit table unless you REALLY need them.
 --
 -- It is sometimes worth copying the audit table, or a coarse subset of it that
 -- you're interested in, into a temporary table where you CREATE any useful
@@ -38,21 +40,27 @@ COMMENT ON SCHEMA audit IS 'Out-of-table audit/history logging tables and trigge
 --
 CREATE TABLE audit.logged_actions (
     event_id bigserial primary key,
+
     schema_name text not null,
     table_name text not null,
     relid oid not null,
+
     session_user_name text,
+    hasura_user jsonb,
+
     action_tstamp_tx TIMESTAMP WITH TIME ZONE NOT NULL,
     action_tstamp_stm TIMESTAMP WITH TIME ZONE NOT NULL,
     action_tstamp_clk TIMESTAMP WITH TIME ZONE NOT NULL,
     transaction_id bigint,
+
     application_name text,
     client_addr inet,
     client_port integer,
+
     client_query text,
     action TEXT NOT NULL CHECK (action IN ('I','D','U', 'T')),
-    row_data hstore,
-    changed_fields hstore,
+    row_data jsonb,
+    changed_fields jsonb,
     statement_only boolean not null
 );
 
@@ -84,11 +92,9 @@ CREATE INDEX logged_actions_action_idx ON audit.logged_actions(action);
 CREATE OR REPLACE FUNCTION audit.if_modified_func() RETURNS TRIGGER AS $body$
 DECLARE
     audit_row audit.logged_actions;
-    include_values boolean;
-    log_diffs boolean;
-    h_old hstore;
-    h_new hstore;
     excluded_cols text[] = ARRAY[]::text[];
+    new_r jsonb;
+    old_r jsonb;
 BEGIN
     IF TG_WHEN <> 'AFTER' THEN
         RAISE EXCEPTION 'audit.if_modified_func() may only run as an AFTER trigger';
@@ -100,6 +106,7 @@ BEGIN
         TG_TABLE_NAME::text,                          -- table_name
         TG_RELID,                                     -- relation OID for much quicker searches
         session_user::text,                           -- session_user_name
+        current_setting('hasura.user', 't')::jsonb,   -- user information from hasura graphql engine
         current_timestamp,                            -- action_tstamp_tx
         statement_timestamp(),                        -- action_tstamp_stm
         clock_timestamp(),                            -- action_tstamp_clk
@@ -120,18 +127,22 @@ BEGIN
     IF TG_ARGV[1] IS NOT NULL THEN
         excluded_cols = TG_ARGV[1]::text[];
     END IF;
-    
+
     IF (TG_OP = 'UPDATE' AND TG_LEVEL = 'ROW') THEN
-        audit_row.row_data = hstore(OLD.*) - excluded_cols;
-        audit_row.changed_fields =  (hstore(NEW.*) - audit_row.row_data) - excluded_cols;
-        IF audit_row.changed_fields = hstore('') THEN
-            -- All changed fields are ignored. Skip this update.
-            RETURN NULL;
-        END IF;
+        old_r = to_jsonb(OLD);
+        new_r = to_jsonb(NEW);
+        audit_row.row_data = old_r - excluded_cols;
+        SELECT
+          jsonb_object_agg(new_t.key, new_t.value) - excluded_cols
+        INTO
+          audit_row.changed_fields
+        FROM jsonb_each(old_r) as old_t
+        JOIN jsonb_each(new_r) as new_t
+          ON (old_t.key = new_t.key AND old_t.value <> new_t.value);
     ELSIF (TG_OP = 'DELETE' AND TG_LEVEL = 'ROW') THEN
-        audit_row.row_data = hstore(OLD.*) - excluded_cols;
+        audit_row.row_data = to_jsonb(OLD) - excluded_cols;
     ELSIF (TG_OP = 'INSERT' AND TG_LEVEL = 'ROW') THEN
-        audit_row.row_data = hstore(NEW.*) - excluded_cols;
+        audit_row.row_data = to_jsonb(NEW) - excluded_cols;
     ELSIF (TG_LEVEL = 'STATEMENT' AND TG_OP IN ('INSERT','UPDATE','DELETE','TRUNCATE')) THEN
         audit_row.statement_only = 't';
     ELSE
