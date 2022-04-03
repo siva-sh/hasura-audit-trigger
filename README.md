@@ -4,6 +4,7 @@ This is based off https://github.com/2ndQuadrant/audit-trigger with the followin
 
 1. The row data is stored in `jsonb`.
 2. Logs user information from hasura's graphql-engine (accessible by `current_setting('hasura.user')`).
+3. **Every table exposes a primary key column with a universally unique identifier __id_. This __id_ is used to track row changes across tables.**
 
 ## Installation
 
@@ -11,26 +12,6 @@ Load `audit.sql` into the database where you want to set up auditing. You can do
 
 ```bash
 psql -h <db-host> -p <db-port> -U <db-user> -d <db> -f audit.sql --single-transaction
-```
-
-## Setting up triggers
-
-Run the following sql to setup audit on a table
-
-```sql
-select audit.audit_table('author');
-```
-
-For a table in a different schema name as follows:
-
-```sql
-select audit.audit_table('shipping.delivery');
-```
-
-This sets up triggers on the given table which logs any change (insert/update/delete) into the table `audit.logged_actions`.
-
-```sql
-select * from audit.logged_actions
 ```
 
 ## Available options
@@ -49,17 +30,23 @@ The function `audit.audit_table` takes the following arguments:
 Do not log changes for every row
 
 ```sql
-select audit.audit_table('author', false);
+select audit.audit_table('public.author', false);
 ```
 
 Log changes for every row but don't log the sql statement
 
 ```sql
-select audit.audit_table('author', true, false);
+select audit.audit_table('public.author', true, false);
 ```
 
 Log changes for every row, log the sql statement, but don't log the data of the columns `email` and `phone_number`
 
 ```sql
-select audit.audit_table('author', true, true, '{email,phone_number}');
+select audit.audit_table('public.author', true, true, '{email,phone_number}');
+```
+
+View the list of tables currently being audited
+
+```sql
+SELECT * FROM audit.tableslist
 ```
