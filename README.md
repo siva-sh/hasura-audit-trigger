@@ -48,5 +48,11 @@ select audit.audit_table('public.author', true, true, '{email,phone_number}');
 View the list of tables currently being audited
 
 ```sql
-SELECT * FROM audit.tableslist
+select * from audit.tableslist
+```
+
+Remove auditing from a table currently being audited
+
+```sql
+select deaudit_table('public.author')
 ```
