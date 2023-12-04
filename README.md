@@ -1,10 +1,16 @@
 A simple, customisable table audit system for PostgreSQL implemented using triggers.
 
 This is based off https://github.com/2ndQuadrant/audit-trigger with the following changes
+[Here's more information about this project](http://wiki.postgresql.org/wiki/Audit_trigger_91plus)
 
 1. The row data is stored in `jsonb`.
 2. Logs user information from hasura's graphql-engine (accessible by `current_setting('hasura.user')`).
 3. **Every table exposes a primary key column with a universally unique identifier __id_. This __id_ is used to track row changes across tables.**
+
+
+# Forks
+
+* https://github.com/iloveitaly/audit-trigger - [contains a bunch of PRs](https://github.com/2ndQuadrant/audit-trigger/pull/48) including using jsonb for storage, function to stop auditing a table, option to not track inserts, and including pk ids in the audit table.
 
 ## Installation
 
