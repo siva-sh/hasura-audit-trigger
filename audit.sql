@@ -44,7 +44,7 @@ CREATE TABLE audit.logged_actions
     session_user_name text,
     hasura_user       jsonb,
     hasura_role       text,
-    hasura_user_id    text,
+    hasura_user_id    uuid,
 
     action_tstamp_tx  TIMESTAMP WITH TIME ZONE NOT NULL,
     action_tstamp_stm TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -111,7 +111,7 @@ BEGIN
         session_user::text,                           -- session_user_name
         current_setting('hasura.user', 't')::jsonb,   -- hasura user information
         current_setting('hasura.user', 't')::jsonb->>'x-hasura-role'::text,   -- hasura-role information
-        current_setting('hasura.user', 't')::jsonb->>'x-hasura-user-id'::text,   -- hasura-user-id information
+        current_setting('hasura.user', 't')::jsonb->>'x-hasura-user-id'::uuid,   -- hasura-user-id information
         current_timestamp,                            -- action_tstamp_tx
         statement_timestamp(),                        -- action_tstamp_stm
         clock_timestamp(),                            -- action_tstamp_clk
